@@ -58,34 +58,44 @@ exec_kinit() {
     password=$(<$KINIT_PW_FILE)
   fi
 
-  fifo=fifo
+  local fifo=~/.gw_fifo
+
+  if [ -f $fifo ] ; then
+    rm -f $fifo
+  fi
+
   mkfifo ${fifo}
   exec 3<> ${fifo}
 
-  password_request="Password"
+  local password_request="Password"
 
-  authenticated="Authenticated"
-  password_incorrect="Password incorrect"
+  local authenticated="Authenticated"
+  local password_incorrect="kinit: Password incorrect"
+
+  local str
 
   while IFS='' read -d $'\0' -n 1 ch ; do
     str+="${ch}"
 
     if [ "${str}" = "${password_request}" ] ; then
-      echo "password request found: ${str}"
+      echo "password request found"
       echo ">>> sending password: ${password}"
       echo "${password}" >&3
       unset str
     elif [ "${str}" = "${authenticated}" ] ; then
-      echo "kinit successful: ${str}"
+      echo "kinit successful"
     elif [ "${str}" = "${password_incorrect}" ] ; then
-      echo "password incorrect: ${str}"
+      echo "password incorrect"
+      rm -f $KINIT_PW_FILE
+
+      exec_kinit
     fi
 
     if [ "$ch" = $'\n' ] ; then
-      echo -n "--- discarding input line: ${str}"
+      echo -n "# ${str}"
       unset str
     fi
-  done < <($KINIT_AUTO_SCRIPT <${fifo})
+  done < <($KINIT_AUTO_SCRIPT <${fifo} 2>&1)
 
   rm ${fifo}
 }
