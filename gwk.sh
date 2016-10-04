@@ -64,8 +64,8 @@ exec_kinit() {
     rm -f $fifo
   fi
 
-  mkfifo ${fifo}
-  exec 3<> ${fifo}
+  mkfifo $fifo
+  exec 3<> $fifo
 
   local password_request="Password"
 
@@ -74,6 +74,7 @@ exec_kinit() {
 
   local str
 
+  echo ""
   while IFS='' read -d $'\0' -n 1 ch ; do
     str+="${ch}"
 
@@ -88,16 +89,16 @@ exec_kinit() {
       echo "password incorrect"
       rm -f $KINIT_PW_FILE
 
-      exec_kinit
+      exit -1
     fi
 
-    if [ "$ch" = $'\n' ] ; then
+    if [ "${ch}" = $'\n' ] ; then
       echo -n "# ${str}"
       unset str
     fi
-  done < <($KINIT_AUTO_SCRIPT <${fifo} 2>&1)
+  done < <($KINIT_AUTO_SCRIPT <$fifo 2>&1)
 
-  rm ${fifo}
+  rm -f $fifo
 }
 
 exec_kinit
