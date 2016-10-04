@@ -9,17 +9,17 @@
 
 #-------
 #	v1.3.4
-#		- minor change (display text) 
-#	v1.3.3 
+#		- minor change (display text)
+#	v1.3.3
 #		- allow '-' character in hostname
 #	v1.3.2
 #		- add feature : manage host description.
 #	v1.3.1
-#		- rearrange key 
+#		- rearrange key
 #	v1.3.0
 #		- support interactive kinit
 #	v1.2.2
-#		- display message when rlogin 
+#		- display message when rlogin
 #	v1.2.1
 #		- fix tab auto-completion
 #	v1.2.0
@@ -27,21 +27,70 @@
 #		- improve tab auto-completion
 #		- thanx to @worwornf for feedback
 #==============================================================================
- 
+
 #========================================
 # Constants for configuration
 #========================================
 HOST_LIST_FILE=~/.known_hosts
 HOST_DISPLAY_COUNT=15
 KINIT_PW_FILE=~/.kinit_passwd
+KINIT_AUTO_SCRIPT=~/.kinit_auto.sh
 USER_LIST_FOR_RLOGIN=(irteam irteamsu )
- 
+
 VERSION="1.3.4"
 #========================================
 # kinit
 #========================================
-# run direct
-kinit -f
+exec_kinit() {
+  if [ ! -f $KINIT_AUTO_SCRIPT ] ; then
+    echo '#!/bin/bash' > $KINIT_AUTO_SCRIPT
+    echo 'kinit -V "$(whoami)@NAVER.COM"' >> $KINIT_AUTO_SCRIPT
+
+    chmod +x $KINIT_AUTO_SCRIPT
+  fi
+
+  if [ ! -f $KINIT_PW_FILE ];then
+  	echo -ne "${red}Password for `whoami`@NAVER.COM:${reset}"
+  	read -s -e password
+
+    echo $password > $KINIT_PW_FILE
+  else
+    password=$(<$KINIT_PW_FILE)
+  fi
+
+  fifo=fifo
+  mkfifo ${fifo}
+  exec 3<> ${fifo}
+
+  password_request="Password"
+
+  authenticated="Authenticated"
+  password_incorrect="Password incorrect"
+
+  while IFS='' read -d $'\0' -n 1 ch ; do
+    str+="${ch}"
+
+    if [ "${str}" = "${password_request}" ] ; then
+      echo "password request found: ${str}"
+      echo ">>> sending password: ${password}"
+      echo "${password}" >&3
+      unset str
+    elif [ "${str}" = "${authenticated}" ] ; then
+      echo "kinit successful: ${str}"
+    elif [ "${str}" = "${password_incorrect}" ] ; then
+      echo "password incorrect: ${str}"
+    fi
+
+    if [ "$ch" = $'\n' ] ; then
+      echo -n "--- discarding input line: ${str}"
+      unset str
+    fi
+  done < <($KINIT_AUTO_SCRIPT <${fifo})
+
+  rm ${fifo}
+}
+
+exec_kinit
 
 #========================================
 # Read key input
@@ -55,14 +104,14 @@ SpecialKeyCodes="
 0027 0091 0068 0;left
 0027 0091 0090 0;shift-tab
 "
- 
+
 ControlCharacters=(
 	[0x00]="enter"			# "Null character"
 	[0x09]="tab"
 	[0x7F]="backspace"
 	[0x08]="ctrl-h"
 	[0x15]="ctrl-u"
-	[0x01]="ctrl-a" 
+	[0x01]="ctrl-a"
 	[0x05]="ctrl-e"
 	[0x02]="ctrl-b"
 	[0x06]="ctrl-f"
@@ -72,19 +121,19 @@ ControlCharacters=(
 	[0x0e]="ctrl-n"
 	[0x12]="ctrl-r"
 )
- 
+
 function read1 {
 	IFS='' read  -sn1 "${@}" scancode
 }
 function read2 {
-	# Captues Ctrl-C 
+	# Captues Ctrl-C
 	local -i ECode=0
 	stty -echo raw
 	scancode=$(dd bs=1 count=1 2>/dev/null || true )
 	stty echo -raw
 }
 function read_key {
-	local scancode 
+	local scancode
 	local scancode_f
 	local d
 	if read1 ${1:-}; then
@@ -140,8 +189,8 @@ function read_key {
 		esac
 	fi
 }
- 
- 
+
+
 #========================================
 # Control screen
 #========================================
@@ -154,7 +203,7 @@ magenta="\x1b[35m"
 cyan="\x1b[36m"
 white="\x1b[37m"
 reset="\x1b[39m"
- 
+
 bg_black="\x1b[40m"
 bg_red="\x1b[41m"
 bg_green="\x1b[42m"
@@ -164,12 +213,12 @@ bg_magenta="\x1b[45m"
 bg_cyan="\x1b[46m"
 bg_white="\x1b[47m"
 bg_reset="\x1b[49m"
- 
+
 bold="\x1b[1m"
 bold_off="\x1b[22m"
 underline="\x1b[4m"
 underline_off="\x1b[24m"
- 
+
 save_cursor() {
 	tput sc
 }
@@ -179,7 +228,7 @@ restore_cursor() {
 move_cursor() {
 	tput cup $1 $2
 }
- 
+
 #========================================
 # Control user list
 #========================================
@@ -199,7 +248,7 @@ next_user() {
 		let "index=index+1 % cnt"
 	done
 }
- 
+
 #========================================
 # Control host list
 #========================================
@@ -207,7 +256,7 @@ host_list=()
 host_descs=()
 hostname_filter=
 filtered_host_list=
-selected_host= 
+selected_host=
 cursor_offset=0
 init_host_list() {
 	if [ ! -f $HOST_LIST_FILE ];then
@@ -222,20 +271,20 @@ init_host_list() {
 	host_list=($(printf "%s\n" ${host_list[@]} | sort -u ))
 	filter_host_list
 }
- 
+
 modify_host_description() {
 	if [ ! -z "$selected_host" ];then
 #		sed -i~ -r "s/^${selected_host}[ \t]?.*/$selected_host/"  $HOST_LIST_FILE
 		set_host_description "$selected_host"
-	else 
+	else
 		message="select a host to modify."
 	fi
 }
- 
+
 set_host_description() {
 	local host=$1
 	local old_desc="$(host_description $host)"
-	
+
 	clear
 	print_signature
        	echo -e "Enter description for ${yellow}$host${reset}: "
@@ -246,14 +295,14 @@ set_host_description() {
 	echo -e "${reset}"
 	if [ -z "$desc" ];then desc="$old_desc"; fi
 	if [ -z "$desc" ];then desc=""; fi
- 
+
 	if [ -z "`cat $HOST_LIST_FILE | grep -E "^$host"`" ];then
 		echo "$host     $desc" >> $HOST_LIST_FILE
 	else
 		sed -i~ -r "s/^${host}[ \t]?.*/$host   $desc/"  $HOST_LIST_FILE
 	fi
 }
- 
+
 add_host_to_list() {
 	local host=$1
 	if [ -z "`cat $HOST_LIST_FILE | grep -E "^$host"`" ];then
@@ -262,10 +311,10 @@ add_host_to_list() {
 		set_host_description "$host"
 	fi
 }
- 
+
 filter_host_list() {
-	filtered_host_list=($( 
-		for i in ${host_list[@]};do 
+	filtered_host_list=($(
+		for i in ${host_list[@]};do
 			echo $i
 		done | grep "$hostname_filter"
 	))
@@ -273,7 +322,7 @@ filter_host_list() {
 		selected_host=
 	fi
 }
- 
+
 host_index_of() {
 	local host=$1
 	local index=0
@@ -286,7 +335,7 @@ host_index_of() {
 	done
 	echo ""
 }
- 
+
 select_next_host() {
 	local cycle=${1:-false}
 	local index
@@ -302,11 +351,11 @@ select_next_host() {
 		if [ $index -lt "${#filtered_host_list[@]}" ];then
 			selected_host="${filtered_host_list[index]}"
 		elif [ $cycle == true ];then
-			selected_host="${filtered_host_list[0]}" 
+			selected_host="${filtered_host_list[0]}"
 		fi
 	fi
 }
- 
+
 select_prev_host() {
 	local cycle=${1:-false}
 	local index
@@ -323,15 +372,15 @@ select_prev_host() {
 		if [ $index -ge 0 ];then
 			selected_host="${filtered_host_list[index]}"
 		elif [ $cycle == true ];then
-			selected_host="${filtered_host_list[cnt-1]}" 
+			selected_host="${filtered_host_list[cnt-1]}"
 		fi
 	fi
 }
- 
+
 complete_hostname() {
 	local common_matched
 	local matched
-	
+
 	while true;do
 		for hostname in "${filtered_host_list[@]}" ;do
 			matched="`echo $hostname | grep -o "${hostname_filter}." | head -n 1`"
@@ -341,8 +390,8 @@ complete_hostname() {
 			fi
 		done
 		common_matched="${matched}"
-		if [ -z "$common_matched" ]; then 
-			break 
+		if [ -z "$common_matched" ]; then
+			break
 		fi
 		if [ "$hostname_filter" == "$common_matched" ];then
 			break
@@ -356,7 +405,7 @@ complete_hostname() {
                 filter_host_list
         fi
 }
- 
+
 append_hostname_filter() {
 	local ch=$1
 	local len=${#hostname_filter}
@@ -368,7 +417,7 @@ append_hostname_filter() {
 	hostname_filter=$prefix$ch$postfix
 	filter_host_list
 }
- 
+
 delete_prev_ch_hostname_filter() {
 	local len=${#hostname_filter}
 	local prefix=${hostname_filter:0:($len+$cursor_offset)}
@@ -383,7 +432,7 @@ delete_prev_ch_hostname_filter() {
 		filter_host_list
 	fi
 }
- 
+
 delete_next_ch_hostname_filter() {
 	local len=${#hostname_filter}
 	local prefix=${hostname_filter:0:($len+$cursor_offset)}
@@ -398,7 +447,7 @@ delete_next_ch_hostname_filter() {
 		filter_host_list
 	fi
 }
- 
+
 delete_prev_all_hostname_filter() {
 	local len=${#hostname_filter}
 	local prefix=${hostname_filter:0:($len+$cursor_offset)}
@@ -412,7 +461,7 @@ delete_prev_all_hostname_filter() {
 		filter_host_list
 	fi
 }
- 
+
 delete_next_all_hostname_filter() {
 	local len=${#hostname_filter}
 	local prefix=${hostname_filter:0:($len+$cursor_offset)}
@@ -427,14 +476,14 @@ delete_next_all_hostname_filter() {
 		filter_host_list
 	fi
 }
- 
- 
+
+
 clear_hostname_filter() {
 	hostname_filter=
 	cursor_offset=0
 	filter_host_list
 }
- 
+
 cursor_move_left() {
 	let "cursor_offset--"
 	local len=${#hostname_filter}
@@ -442,24 +491,24 @@ cursor_move_left() {
 		let "cursor_offset=0-len"
 	fi
 }
- 
+
 cursor_move_right() {
 	let "cursor_offset++"
 	if [ $cursor_offset -gt 0 ];then
 		cursor_offset=0
 	fi
 }
- 
+
 cursor_move_begin() {
 	local len="${#hostname_filter}"
 	let "cursor_offset=0-len"
 }
- 
+
 cursor_move_end() {
 	cursor_offset=0
 }
- 
- 
+
+
 #========================================
 # Print host list
 #========================================
@@ -478,12 +527,12 @@ adjust_begin_index() {
 		let begin_index=selected-HOST_DISPLAY_COUNT+1
 	fi
 }
- 
+
 host_description() {
 	local hostname=$1
-	echo "`cat $HOST_LIST_FILE | grep \"$hostname\" | sed -r -e 's/^[^ \t]+[ \t]*//' -e 's/[ \t]+$//'`" 
+	echo "`cat $HOST_LIST_FILE | grep \"$hostname\" | sed -r -e 's/^[^ \t]+[ \t]*//' -e 's/[ \t]+$//'`"
 }
- 
+
 print_host_list() {
 	adjust_begin_index
 	echo "Known hosts (${#filtered_host_list[@]}/${#host_list[@]})"
@@ -497,7 +546,7 @@ print_host_list() {
 		local printmsg=" - $host"
 		if [ -n "$hostname_filter" ];then
 			local matched=`echo $host | grep -o "$hostname_filter" | head -n 1`
-			printmsg=${printmsg/$matched/${underline}$matched${underline_off}} 
+			printmsg=${printmsg/$matched/${underline}$matched${underline_off}}
 		fi
 		if [ "$selected_host" == "$host" ];then
 			printmsg=${printmsg/ -/>>}
@@ -521,9 +570,9 @@ print_logo(){
 	echo -en "${cyan}"
 	echo -en "${reset}"
 	echo -e "==============================================================================="
-	
+
 }
- 
+
 print_help() {
 	echo -en " [/]: change user to rlogin        "
 	echo -en " [ctrl-n]: clear hostname          "
@@ -531,30 +580,30 @@ print_help() {
 	echo -e  " [=]: modify description for the selected host"
 	echo -e  " - hostname will be autosaved if it is valid.($HOST_LIST_FILE)"
 }
- 
+
 print_command() {
 	local command
 	command="${command}${magenta}`whoami`@gw-kit> ${reset}"
 	command="${command}${white}rlogin -l ${bold}$user ${yellow}$hostname_filter${reset}${bold_off}"
-	
-	echo "-------------------------------------------------------------------------------"	
+
+	echo "-------------------------------------------------------------------------------"
 	if [ -n "$message" ];then
 		echo -e "${red}${bold}[!] $message${bold_off}${reset}"
 		message=
 	else
-		echo 
+		echo
 	fi
 	echo -en $command
 	save_cursor
 	echo
-	echo "-------------------------------------------------------------------------------"	
+	echo "-------------------------------------------------------------------------------"
 }
 set_cursor() {
 	for (( i=0; i > $cursor_offset; i-- ));do
 		tput cub1
 	done
 }
- 
+
 print_screen() {
 	clear
 	print_logo
@@ -564,11 +613,11 @@ print_screen() {
 	restore_cursor
 	set_cursor
 }
- 
+
 print_signature(){
 	echo -e "${cyan}Gateway-kit${reset} ${blue}ver$VERSION${reset}"
 }
- 
+
 #========================================
 # execute rlogin
 #========================================
@@ -583,13 +632,13 @@ do_execute() {
 		message="you should select a host to rlogin!"
 		return
 	fi
-	clear 
+	clear
 	local tmpfile="$(basename $0).$$.tmp"
 	print_signature
 	echo -e "Try to rlogin to ${yellow}$hostname_filter${reset} as ${magenta}$user${reset} ..."
-	echo 
+	echo
 	`rlogin -l $user $hostname_filter 2> $tmpfile > /dev/tty`
-	if [ $? == 0 ];then 
+	if [ $? == 0 ];then
 		clear
 		add_host_to_list $hostname_filter
 	else
@@ -598,24 +647,24 @@ do_execute() {
 	filter_host_list
 	clear
 }
- 
+
 good_bye(){
 	tput cud1
 	tput cud1
 	tput ed
 	echo -e "${reset}${red}Happy Hacking!${reset}"
-	echo 
-	stty echo 
+	echo
+	stty echo
 	rm ~/gwk.sh.*.tmp &> /dev/null
 	exit 0;
 }
- 
+
 #==============================================================================
 # Initialize
 #==============================================================================
 init_host_list
 trap good_bye INT # trap ctrl+c
- 
+
 #==============================================================================
 # Main Loop
 #==============================================================================
